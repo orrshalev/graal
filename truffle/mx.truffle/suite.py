@@ -235,7 +235,7 @@ suite = {
         "sdk:POLYGLOT",
         "com.oracle.truffle.api.instrumentation",
         "com.oracle.truffle.api.exception",
-        "com.oracle.truffle.api.operation",
+        "com.oracle.truffle.api.bytecode",
       ],
       "requires" : [
         "java.logging",
@@ -407,7 +407,7 @@ suite = {
       "workingSets" : "API,Truffle",
     },
     
-    "com.oracle.truffle.api.operation" : {
+    "com.oracle.truffle.api.bytecode" : {
       "subDir" : "src",
       "sourceDirs" : ["src"],
       "dependencies" : [
@@ -427,7 +427,7 @@ suite = {
       "workingSets" : "API,Truffle",
     },
     
-    "com.oracle.truffle.api.operation.test" : {
+    "com.oracle.truffle.api.bytecode.test" : {
       "subDir" : "src",
       "sourceDirs" : ["src"],
       "dependencies" : [
@@ -1488,7 +1488,7 @@ suite = {
           "com.oracle.truffle.api",
           "com.oracle.truffle.api.instrumentation",
           "com.oracle.truffle.api.dsl",
-          "com.oracle.truffle.api.operation",
+          "com.oracle.truffle.api.bytecode",
           "com.oracle.truffle.api.profiles",
           "com.oracle.truffle.api.interop",
           "com.oracle.truffle.api.exception",
@@ -1543,7 +1543,7 @@ suite = {
       "dependencies" : [
         "com.oracle.truffle.api",
         "com.oracle.truffle.api.exception",
-        "com.oracle.truffle.api.operation",
+        "com.oracle.truffle.api.bytecode",
         "com.oracle.truffle.api.dsl",
         "com.oracle.truffle.api.profiles",
         "com.oracle.truffle.api.debug",
@@ -1937,7 +1937,7 @@ suite = {
          "com.oracle.truffle.api.instrumentation.test",
          "com.oracle.truffle.api.debug.test",
          "com.oracle.truffle.api.strings.test",
-         "com.oracle.truffle.api.operation.test",
+         "com.oracle.truffle.api.bytecode.test",
          "com.oracle.truffle.object.basic.test",
          "com.oracle.truffle.nfi.test",
          "com.oracle.truffle.api.staticobject.test",
