@@ -43,6 +43,7 @@ import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.options.OptionKey;
 import org.graalvm.compiler.options.OptionType;
 import org.graalvm.compiler.options.OptionValues;
+import org.graalvm.compiler.phases.common.LazificationPhase;
 import org.graalvm.compiler.phases.common.BoxNodeIdentityPhase;
 import org.graalvm.compiler.phases.common.BoxNodeOptimizationPhase;
 import org.graalvm.compiler.phases.common.CanonicalizerPhase;
@@ -71,6 +72,7 @@ public class HighTier extends BaseTier<HighTierContext> {
     public HighTier(OptionValues options) {
         CanonicalizerPhase canonicalizer = createCanonicalizerPhase(options);
         appendPhase(canonicalizer);
+        appendPhase(new LazificationPhase());
 
         if (NodeCounterPhase.Options.NodeCounters.getValue(options)) {
             appendPhase(new NodeCounterPhase(NodeCounterPhase.Stage.INIT));
