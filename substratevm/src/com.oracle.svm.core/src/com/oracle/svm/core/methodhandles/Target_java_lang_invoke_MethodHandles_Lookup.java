@@ -88,4 +88,9 @@ final class Target_java_lang_invoke_MethodHandles_Lookup {
     @Substitute
     void checkSecurityManager(Class<?> refc) {
     }
+
+    @SuppressWarnings("unused")
+    @Substitute
+    void checkSecurityManager(Class<?> refc, Target_java_lang_invoke_MemberName m) {
+    }
 }
