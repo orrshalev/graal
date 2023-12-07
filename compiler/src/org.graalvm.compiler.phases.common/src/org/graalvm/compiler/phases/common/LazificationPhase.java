@@ -25,6 +25,7 @@
 package org.graalvm.compiler.phases.common;
 
 import jdk.vm.ci.meta.ResolvedJavaMethod;
+import jdk.vm.ci.meta.ResolvedJavaType;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
@@ -53,14 +54,16 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
    }
 
    static private void lazifyParam(StructuredGraph graph, FindLazifiable.LazifiableParam lazifiableParam) {
-       ProgramSlice programSlice = new ProgramSlice(lazifiableParam.value, graph.method(), lazifiableParam.callSite);
-       if (!programSlice.canOutline()) {
-           return;
-       }
-       ResolvedJavaMethod outlinedMethod = programSlice.outline();
-       removeRedundantNodes(graph, outlinedMethod, lazifiableParam);
-       // reroute(graph, programSlice);
-       updateArgUses(graph, outlinedMethod, lazifiableParam);
+       ProgramSlice programSlice = new ProgramSlice(graph, lazifiableParam.value, graph.method(), lazifiableParam.callSite);
+       ResolvedJavaMethod outlinedMethod = programSlice.getOutlinedMethod();
+       ResolvedJavaType originalClass = graph.method().getDeclaringClass();
+       updateWithThunk(originalClass, outlinedMethod);
    }
 
+    /**
+     * Updates the original class with a thunk that calls the outlined method
+     */
+   private static void updateWithThunk(ResolvedJavaType originalClass, ResolvedJavaMethod outlinedMethod) {
+      throw new UnsupportedOperationException();
+   }
 }

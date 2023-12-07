@@ -41,6 +41,10 @@ public class FindLazifiable {
         this.promising = calculatePromising(graph); // TODO
     }
 
+    /**
+     * Return all parameters of methods in the graph
+     *
+     */
     private Set<LazifiableParam> calculateLazifiable(Graph graph) {
         Set<LazifiableParam> result = new HashSet<>();
         for (Node node : graph.getNodes()) {
@@ -50,13 +54,17 @@ public class FindLazifiable {
                 ResolvedJavaMethod.Parameter[] parameters = targetMethod.getParameters();
                 NodeInputList<ValueNode> arguments = invokeNode.callTarget().arguments();
                 for (int i = 0; i < parameters.length; i++) {
-                    result.add(new LazifiableParam(targetMethod, parameters[i], arguments.get(i)));
+                    result.add(new LazifiableParam(targetMethod, parameters[i], arguments.get(i), invokeNode));
                 }
             }
         }
         return result;
     }
 
+    /**
+     * Return only the parameters that have a path in the control flow graph
+     * where they are not used
+     */
     private Set<LazifiableParam> calculatePromising(Graph graph) {
         return null;
     }
