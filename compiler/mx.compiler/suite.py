@@ -125,6 +125,16 @@ suite = {
       },
     },
 
+
+    "JAVASSIST" : {
+      "sha1" : "6c32028609e5dd4a1b78e10fbcd122b09b3928b1",
+      "maven" : {
+        "groupId" : "org.javassist",
+        "artifactId" : "javassist",
+        "version" : "3.29.2-GA",
+      },
+    },
+
     "ASM_TREE_9.1" : {
       "sha1" : "c333f2a855069cb8eb17a40a3eb8b1b67755d0eb",
       "maven" : {
@@ -1283,7 +1293,8 @@ suite = {
       "subDir" : "src",
       "sourceDirs" : ["src"],
       "dependencies" : [
-        "org.graalvm.compiler.phases"
+        "org.graalvm.compiler.phases",
+        "JAVASSIST"
       ],
       "annotationProcessors" : [
         "GRAAL_PROCESSOR",
