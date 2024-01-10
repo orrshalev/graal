@@ -35,6 +35,7 @@ import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
+import org.graalvm.compiler.nodes.java.MethodCallTargetNode;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -233,8 +234,8 @@ public class ProgramSlice {
 
     static class DataDependencies {
         Set<Block> blocks;
-        Set<ValueNode> values;
-        DataDependencies(Set<Block> blocks, Set<ValueNode> values) {
+        Set<Node> values;
+        DataDependencies(Set<Block> blocks, Set<Node> values) {
             this.blocks = blocks;
             this.values = values;
         }
@@ -247,10 +248,10 @@ public class ProgramSlice {
      */
     private DataDependencies computeDataDependencies(StructuredGraph graph, InvokeNode I, int parameter, HashMap<Block, ArrayList<ValueNode>> gates) {
 
-        Set<ValueNode> dependencies = new HashSet<>();
+        Set<Node> dependencies = new HashSet<>();
         Set<Block> blocks = new HashSet<>();
-        HashSet<ValueNode> visited = new HashSet<>();
-        Queue<ValueNode> to_visit = new LinkedList<>();
+        HashSet<Node> visited = new HashSet<>();
+        Queue<Node> to_visit = new LinkedList<>();
 
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
 
@@ -258,17 +259,29 @@ public class ProgramSlice {
         to_visit.add(parameterNode);
 
         while (!to_visit.isEmpty()) {
-            ValueNode current = to_visit.remove();
+            Node current = to_visit.remove();
             dependencies.add(current);
 
-            if (current instanceof BinaryNode) {
+            if (current instanceof ValueNode) {
                 blocks.add(cfg.blockFor(current));
-                for (Node input : current.usages()) {
-                    // TODO
+                for (Node input : current.inputs()) {
+                    if ((!(input instanceof ValueNode) && !(input instanceof MethodCallTargetNode)) || visited.contains(input)) continue;
+                    visited.add(input);
+                    to_visit.add(input);
                 }
             }
             if (current instanceof PhiNode) {
-                // TODO
+                for (Node input : current.inputs()) {
+                    Block block = cfg.blockFor(input);
+                    if (block != null) {
+                        blocks.add(block);
+                    }
+                }
+                for (Node gate : gates.get(cfg.blockFor(current))) {
+                    if (gate != null && !visited.contains(gate)) {
+                        to_visit.add(gate);
+                    }
+                }
             }
         }
 
