@@ -28,7 +28,11 @@ import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 import org.graalvm.compiler.core.common.cfg.AbstractControlFlowGraph;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.graph.iterators.NodeIterable;
+import org.graalvm.compiler.nodes.IfNode;
 import org.graalvm.compiler.nodes.InvokeNode;
+import org.graalvm.compiler.nodes.LoopBeginNode;
+import org.graalvm.compiler.nodes.LoopExitNode;
 import org.graalvm.compiler.nodes.PhiNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
@@ -38,6 +42,7 @@ import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.nodes.java.MethodCallTargetNode;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -45,12 +50,24 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 
+import javassist.ClassPool;
+import javassist.CtClass;
+import javassist.NotFoundException;
+
+
 public class ProgramSlice {
     StructuredGraph graph;
     ValueNode initial;
     ResolvedJavaMethod parentMethod;
     InvokeNode callSite;
     ResolvedJavaMethod outlinedMethod;
+
+    private ArrayList<ValueNode> dependencyArguments;
+    private HashSet<Block> blocksInSlice;
+
+    private HashMap<Block, Block> attractors;
+
+    private HashMap<Block, Block> originalToNewBlocks;
 
     public ProgramSlice(StructuredGraph graph, ValueNode initial, ResolvedJavaMethod parentMethod, InvokeNode callSite) {
         this.graph = graph;
@@ -109,7 +126,7 @@ public class ProgramSlice {
     /**
      *  Returns the block whose predicate should control the phi-functions in blocks
      */
-    static private Optional<Block> GetController(Block block, ControlFlowGraph cfg) {
+    static private Optional<Block> GetController(Block block) {
         Block dominator = block.getDominator();
         while (dominator != null) {
             if (!postDominates(block, dominator)) {
@@ -135,7 +152,7 @@ public class ProgramSlice {
                 if (AbstractControlFlowGraph.dominates(block, predecessor) && !postDominates(block, predecessor)) {
                     blockGate.add(predecessor.getEndNode());
                 } else {
-                    Optional<Block> controlBlock = GetController(predecessor, cfg);
+                    Optional<Block> controlBlock = GetController(predecessor);
                     controlBlock.ifPresent(value -> blockGate.add(value.getEndNode()));
                 }
             }
@@ -148,7 +165,11 @@ public class ProgramSlice {
      * Computes the thunk type for the outlined method
      * @return the thunk type
      */
-    private ResolvedJavaType computeThunkType(ResolvedJavaType originalClass) {
+    private ResolvedJavaType computeThunkType(ResolvedJavaType parentType) {
+        // create a new class
+        ClassPool pool = ClassPool.getDefault();
+        Class runtimeClass = parentType.getClass();
+        LoopBeginNode n;
         throw new UnsupportedOperationException();
     }
 
@@ -156,22 +177,66 @@ public class ProgramSlice {
      * Computes the first dominator blocks for each block in the original function
      */
     private void computeAttractorBlocks() {
-        throw new UnsupportedOperationException();
+       ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
+       Block dominator = cfg.blockFor(callSite).getDominator();
+       HashMap<Block, Block> attractorBlocks = new HashMap<>();
+
+       for (Block block : cfg.getBlocks()) {
+           if (attractorBlocks.containsKey(block)) {
+               continue;
+           }
+           if (this.blocksInSlice.contains(block)) {
+               attractorBlocks.put(block, block);
+               continue;
+           }
+
+           Block dominatorBlock = block.getDominator();
+           Block Cand = dominatorBlock.getDominator();
+           while (Cand != null) {
+               if (this.blocksInSlice.contains(Cand)) {
+                   break;
+               }
+               Cand = Cand.getDominator();
+           }
+           if (Cand != null) {
+               attractorBlocks.put(block, Cand);
+           }
+       }
+       this.attractors = attractorBlocks;
     }
 
     /**
      * Add branches from immediate dominators which existed in the original function
      * the slice
      */
-    private void addDominatorBranches() {
-        throw new UnsupportedOperationException();
+    private void addDominatorBranches(Block current, Block parent, HashSet<Block> visited) {
+        if (this.blocksInSlice.contains(current)) {
+            parent = current;
+        }
+
+        for (Block successor : current.getSuccessors()) {
+            if (!visited.contains(successor)) {
+                visited.add(successor);
+                addDominatorBranches(successor, parent, visited);
+            }
+            if (this.blocksInSlice.contains(successor) && parent != null) {
+                Block parentBlock = this.originalToNewBlocks.get(parent);
+                Block successorBlock = this.originalToNewBlocks.get(successor);
+                // add branch path from parentBlock to successorBlock
+                Block[] successors = parentBlock.getSuccessors();
+                Block[] newSuccesors = Arrays.copyOf(successors, successors.length + 1);
+                newSuccesors[newSuccesors.length - 1] = successorBlock;
+                parentBlock.setSuccessors(newSuccesors);
+            }
+        }
     }
 
     /**
      * Remove unnecessary predecessors to phi nodes in new slice
      */
     private void updatePhiNodes(StructuredGraph graph) {
-        throw new UnsupportedOperationException();
+        
+
     }
 
 
@@ -234,76 +299,47 @@ public class ProgramSlice {
 
     static class DataDependencies {
         Set<Block> blocks;
-        Set<Node> values;
-        DataDependencies(Set<Block> blocks, Set<Node> values) {
+        Set<ValueNode> values;
+        DataDependencies(Set<Block> blocks, Set<ValueNode> values) {
             this.blocks = blocks;
             this.values = values;
         }
     }
+
+
 
     /**
      * Computes the backwards data dependencies of the parameter to compute which values
      * should be part of the slice
      * @return a set of blocks and a set of values that are part of the slice
      */
-    private DataDependencies computeDataDependencies(StructuredGraph graph, InvokeNode I, int parameter, HashMap<Block, ArrayList<ValueNode>> gates) {
+public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNode I, int parameter) {
 
-        Set<Node> dependencies = new HashSet<>();
-        Set<Block> blocks = new HashSet<>();
-        HashSet<Node> visited = new HashSet<>();
-        Queue<Node> to_visit = new LinkedList<>();
+    ValueNode parameterNode = I.callTarget().arguments().get(parameter);
 
-        ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
+    Queue<Node> queue = new LinkedList<>();
+    Set<Node> visited = new HashSet<>();
 
-        ValueNode parameterNode = I.callTarget().arguments().get(parameter);
-        to_visit.add(parameterNode);
+    queue.add(parameterNode);
 
-        while (!to_visit.isEmpty()) {
-            Node current = to_visit.remove();
-            dependencies.add(current);
+    while (!queue.isEmpty()) {
+        Node current = queue.poll();
+        visited.add(current);
 
-            if (current instanceof ValueNode) {
-                blocks.add(cfg.blockFor(current));
-                for (Node input : current.inputs()) {
-                    if ((!(input instanceof ValueNode) && !(input instanceof MethodCallTargetNode)) || visited.contains(input)) continue;
-                    visited.add(input);
-                    to_visit.add(input);
-                }
-            }
-            if (current instanceof PhiNode) {
-                for (Node input : current.inputs()) {
-                    Block block = cfg.blockFor(input);
-                    if (block != null) {
-                        blocks.add(block);
-                    }
-                }
-                for (Node gate : gates.get(cfg.blockFor(current))) {
-                    if (gate != null && !visited.contains(gate)) {
-                        to_visit.add(gate);
-                    }
-                }
+        for (Node input : current.inputs()) {
+            if (!visited.contains(input)) {
+                queue.add(input);
             }
         }
-
-        return new DataDependencies(blocks, dependencies);
     }
+
+    return visited;
+}
 
     /**
      * Builds control flow of slice
      */
     private void rerouteBranches(StructuredGraph graph, InvokeNode I, int parameter, HashMap<Block, ArrayList<ValueNode>> gates) {
-        DataDependencies dataDependencies = computeDataDependencies(graph, I, parameter, gates);
-        Set<Block> blocks = dataDependencies.blocks;
-        Set<ValueNode> dependencies = dataDependencies.values;
-
-        ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-
-        for (Block block : blocks) {
-            for (Block successor : block.getSuccessors()) {
-                if (blocks.contains(successor)) {
-                    // TODO
-                }
-            }
-        }
+        throw new UnsupportedOperationException();
     }
 }

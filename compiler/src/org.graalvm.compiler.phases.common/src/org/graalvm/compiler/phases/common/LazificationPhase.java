@@ -27,12 +27,21 @@ package org.graalvm.compiler.phases.common;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.nodes.FrameState;
+import org.graalvm.compiler.nodes.InvokeNode;
+import org.graalvm.compiler.nodes.PhiNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
+import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.cfg.Block;
+import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.phases.BasePhase;
 import org.graalvm.compiler.phases.common.lazification.FindLazifiable;
 import org.graalvm.compiler.phases.common.lazification.ProgramSlice;
 
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -46,9 +55,57 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
    @SuppressWarnings("try")
    protected void run(StructuredGraph graph, CoreProviders context) {
        try (DebugContext.Scope s = graph.getDebug().scope("Lazification")) {
-           FindLazifiable findLazifiable = new FindLazifiable(graph);
-           for (FindLazifiable.LazifiableParam lazifiableParam : findLazifiable.getLazifiable()) {
-               lazifyParam(graph, lazifiableParam);
+           ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
+           for (Node node : graph.getNodes()) {
+               if (node instanceof InvokeNode && node.toString().contains("calee")) {
+                   Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
+               }
+           }
+           // LazificationPhase.debugPrintBlocks(graph);
+           // LazificationPhase.debugPrintPhiMergeNodes(graph);
+           // FindLazifiable findLazifiable = new FindLazifiable(graph);
+           // for (FindLazifiable.LazifiableParam lazifiableParam : findLazifiable.getLazifiable()) {
+           //     lazifyParam(graph, lazifiableParam);
+           // }
+       }
+   }
+
+   static private void debugPrintInputs(StructuredGraph graph) {
+       for (Node node : graph.getNodes()) {
+           if (node instanceof InvokeNode && node.toString().contains("calee")) {
+               System.out.printf("Invoke node:%s\t", node);
+               Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
+               for (Node dataDep : dataDeps) {
+                   System.out.printf(" %s ", dataDep);
+               }
+               System.out.println();
+           }
+       }
+   }
+   static private void debugPrintBlocks(StructuredGraph graph) {
+       ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
+       System.out.println("\nGRAPHSTART\n");
+       System.out.println();
+       System.out.println(cfg);
+       System.out.println();
+       for (Block block : cfg.getBlocks()) {
+           System.out.println("\nBLOCKSTART\n");
+           for (Node node : block.getNodes()) {
+               System.out.printf("%s", node);
+               for (Node input : node.inputs()) {
+                   System.out.printf(" %s", input);
+               }
+               System.out.println();
+           }
+           System.out.println("\nBLOCKEND\n");
+       }
+       System.out.println("\nGRAPHEND\n");
+   }
+
+   static private void debugPrintPhiMergeNodes(StructuredGraph graph) {
+       for (Node node : graph.getNodes()) {
+           if (node instanceof org.graalvm.compiler.nodes.PhiNode) {
+               System.out.println(((PhiNode) node).merge());
            }
        }
    }
