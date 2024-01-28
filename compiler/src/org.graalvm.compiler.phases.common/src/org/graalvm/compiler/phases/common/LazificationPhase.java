@@ -28,11 +28,10 @@ import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.graph.Node;
-import org.graalvm.compiler.nodes.FrameState;
 import org.graalvm.compiler.nodes.InvokeNode;
 import org.graalvm.compiler.nodes.PhiNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
-import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.ValuePhiNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
@@ -56,13 +55,10 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
    protected void run(StructuredGraph graph, CoreProviders context) {
        try (DebugContext.Scope s = graph.getDebug().scope("Lazification")) {
            ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-           for (Node node : graph.getNodes()) {
-               if (node instanceof InvokeNode && node.toString().contains("calee")) {
-                   Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
-               }
-           }
-           // LazificationPhase.debugPrintBlocks(graph);
-           // LazificationPhase.debugPrintPhiMergeNodes(graph);
+           // debugPrintDataDependencies(graph);
+           // debugPrintPhiNodes(graph);
+           debugPrintBlocks(graph);
+           // debugPrintPhiMergeNodes(graph);
            // FindLazifiable findLazifiable = new FindLazifiable(graph);
            // for (FindLazifiable.LazifiableParam lazifiableParam : findLazifiable.getLazifiable()) {
            //     lazifyParam(graph, lazifiableParam);
@@ -70,34 +66,72 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
        }
    }
 
-   static private void debugPrintInputs(StructuredGraph graph) {
+   static private boolean hasCaleeNode(StructuredGraph graph) {
+         for (Node node : graph.getNodes()) {
+              if (node instanceof InvokeNode && node.toString().contains("calee")) {
+                return true;
+              }
+         }
+         return false;
+   }
+   static private void debugPrintPhiNodes(StructuredGraph graph) {
+       if (!hasCaleeNode(graph)) {
+           return;
+       }
        for (Node node : graph.getNodes()) {
-           if (node instanceof InvokeNode && node.toString().contains("calee")) {
-               System.out.printf("Invoke node:%s\t", node);
-               Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
-               for (Node dataDep : dataDeps) {
-                   System.out.printf(" %s ", dataDep);
+           if (node instanceof ValuePhiNode) {
+               System.out.print(node);
+               for (Node input : ((ValuePhiNode) node).values()) {
+                   System.out.printf(" %s ", input);
                }
                System.out.println();
            }
        }
    }
-   static private void debugPrintBlocks(StructuredGraph graph) {
-       ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-       System.out.println("\nGRAPHSTART\n");
-       System.out.println();
-       System.out.println(cfg);
-       System.out.println();
-       for (Block block : cfg.getBlocks()) {
-           System.out.println("\nBLOCKSTART\n");
-           for (Node node : block.getNodes()) {
-               System.out.printf("%s", node);
-               for (Node input : node.inputs()) {
-                   System.out.printf(" %s", input);
+
+   static private void debugPrintDataDependencies(StructuredGraph graph) {
+       if (!hasCaleeNode(graph)) {
+            return;
+       }
+       Set<Node> visited = new HashSet<>();
+       for (Node node : graph.getNodes()) {
+           if (node instanceof InvokeNode && node.toString().contains("calee")) {
+               System.out.printf("Invoke node:%s\t", node);
+               visited.add(node);
+               Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
+               for (Node dataDep : dataDeps) {
+                   System.out.printf(" %s ", dataDep);
+                   visited.add(dataDep);
                }
                System.out.println();
            }
-           System.out.println("\nBLOCKEND\n");
+       }
+       System.out.print("Not included: ");
+       for (Node node : graph.getNodes()) {
+           if (!visited.contains(node)) {
+                System.out.printf(" %s ", node);
+           }
+       }
+       System.out.println();
+   }
+   static private void debugPrintBlocks(StructuredGraph graph) {
+       if (!hasCaleeNode(graph)) {
+            return;
+       }
+       ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
+       System.out.println(graph);
+       System.out.println();
+       System.out.println(cfg);
+       System.out.println();
+       System.out.printf("DominatorTree: %s", cfg.dominatorTreeString());
+       System.out.println();
+       for (Block block : cfg.getBlocks()) {
+           System.out.printf("\nBLOCKSTART: %s\n", block);
+           for (Node node : block.getNodes()) {
+               System.out.printf("%s", node);
+               System.out.println();
+           }
+           System.out.printf("\nBLOCKEND: %s\n", block);
        }
        System.out.println("\nGRAPHEND\n");
    }

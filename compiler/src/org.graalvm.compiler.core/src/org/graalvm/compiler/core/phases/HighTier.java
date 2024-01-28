@@ -70,9 +70,10 @@ public class HighTier extends BaseTier<HighTierContext> {
     }
 
     public HighTier(OptionValues options) {
+        appendPhase(new LazificationPhase());
+
         CanonicalizerPhase canonicalizer = createCanonicalizerPhase(options);
         appendPhase(canonicalizer);
-        appendPhase(new LazificationPhase());
 
         if (NodeCounterPhase.Options.NodeCounters.getValue(options)) {
             appendPhase(new NodeCounterPhase(NodeCounterPhase.Stage.INIT));

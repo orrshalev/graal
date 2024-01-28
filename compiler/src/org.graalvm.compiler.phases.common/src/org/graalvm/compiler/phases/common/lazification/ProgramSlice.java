@@ -24,18 +24,24 @@
  */
 package org.graalvm.compiler.phases.common.lazification;
 
+import jdk.internal.org.objectweb.asm.tree.analysis.Value;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 import org.graalvm.compiler.core.common.cfg.AbstractControlFlowGraph;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.iterators.NodeIterable;
+import org.graalvm.compiler.nodes.AbstractMergeNode;
+import org.graalvm.compiler.nodes.ControlSplitNode;
+import org.graalvm.compiler.nodes.FrameState;
 import org.graalvm.compiler.nodes.IfNode;
 import org.graalvm.compiler.nodes.InvokeNode;
 import org.graalvm.compiler.nodes.LoopBeginNode;
 import org.graalvm.compiler.nodes.LoopExitNode;
+import org.graalvm.compiler.nodes.MergeNode;
 import org.graalvm.compiler.nodes.PhiNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.ValuePhiNode;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
@@ -142,21 +148,12 @@ public class ProgramSlice {
      * Computes the gates for all blocks in the slice
      * @return a map from blocks to their gates
      */
-    static private HashMap<Block, ArrayList<ValueNode>> computeGates(StructuredGraph graph) {
-        HashMap<Block, ArrayList<ValueNode>> gates = new HashMap<>();
-        ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-        for (Block block : cfg.getBlocks()) {
-            ArrayList<ValueNode> blockGate = new ArrayList<>();
-            for (Block predecessor : block.getPredecessors()) {
-                // if the predecessor dominates blocks and if block does not post dominate predecessor
-                if (AbstractControlFlowGraph.dominates(block, predecessor) && !postDominates(block, predecessor)) {
-                    blockGate.add(predecessor.getEndNode());
-                } else {
-                    Optional<Block> controlBlock = GetController(predecessor);
-                    controlBlock.ifPresent(value -> blockGate.add(value.getEndNode()));
-                }
+    static private Set<ControlSplitNode> computeGates(StructuredGraph graph) {
+        Set<ControlSplitNode> gates = new HashSet<>();
+        for (Node node: graph.getNodes()) {
+            if (node instanceof ControlSplitNode) {
+                gates.add((ControlSplitNode) node);
             }
-            gates.put(block, blockGate);
         }
         return gates;
     }
@@ -332,6 +329,34 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
             }
         }
     }
+
+    Set<ControlSplitNode> gates = computeGates(graph);
+
+    if (gates.isEmpty()) return visited;
+
+    Set<Node> visitedFromGate = new HashSet<>();
+
+    for (ControlSplitNode gate : gates) {
+        queue.add(gate);
+        while (!queue.isEmpty()) {
+            Node current = queue.poll();
+            visitedFromGate.add(current);
+
+            for (Node input : current.inputs()) {
+                if (!visitedFromGate.contains(input)) {
+                    queue.add(input);
+                }
+            }
+        }
+        for (Node node : visited) {
+            if (node instanceof PhiNode && visitedFromGate.contains(node)) {
+                visited.addAll(visitedFromGate);
+                break;
+            }
+        }
+        visitedFromGate.clear();
+    }
+
 
     return visited;
 }
