@@ -37,6 +37,7 @@ import org.graalvm.compiler.nodes.FrameState;
 import org.graalvm.compiler.nodes.IfNode;
 import org.graalvm.compiler.nodes.InvokeNode;
 import org.graalvm.compiler.nodes.LoopBeginNode;
+import org.graalvm.compiler.nodes.LoopEndNode;
 import org.graalvm.compiler.nodes.LoopExitNode;
 import org.graalvm.compiler.nodes.MergeNode;
 import org.graalvm.compiler.nodes.PhiNode;
@@ -327,11 +328,17 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
         dataDependenciesNoControl.add(current);
 
         for (Node input : current.inputs()) {
+            // if invoke in loop and current is phi node controlling loop
+            if (parameterNode instanceof PhiNode && ((input instanceof PhiNode && ((PhiNode) input ).merge() instanceof LoopBeginNode) || input instanceof FrameState) ) {
+                continue;
+            }
+            // if invoke in loop, cannot include frame states
             if (!dataDependenciesNoControl.contains(input)) {
                 queue.add(input);
             }
         }
     }
+
 
     ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
 
@@ -346,27 +353,27 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
                 Node node = nodes.next();
                 if (node == merge) break;
             }
-            while (nodes.hasNext()) {
+            while (nodes.hasNext() && !(parameterNode instanceof PhiNode)) {
                 Node node = nodes.next();
                 controlDependencies.add(node);
             }
             // add control nodes dominated by merge and not dominated by invoke
-            Set<Block> dominatedByMerge = getDominatedBy(mergeBlock, cfg.blockFor(I));
+            Set<Block> dominatedByMerge = new HashSet<>();
+            if (parameterNode instanceof PhiNode) {
+                dominatedByMerge = getDominatedByInLoop(mergeBlock, cfg.blockFor(I));
+            }
+            else {
+                dominatedByMerge = getDominatedBy(mergeBlock, cfg.blockFor(I));
+            }
             for (Block block : dominatedByMerge) {
+                System.out.print(block.toString() + " ");
                 for (Node node : block.getNodes()) {
+                    System.out.print(node.toString() + " ");
                     controlDependencies.add(node);
                 }
+                System.out.println();
             }
         }
-    }
-    for (Node node : controlDependencies) {
-        if (node instanceof InvokeNode && node.toString().contains("calee")) {
-            System.out.println("invoke blarg");
-        }
-        if (node instanceof ReturnNode) {
-            System.out.println("return blarg");
-        }
-
     }
     // add control nodes preceding invoke in block
     for (Node node : cfg.blockFor(I).getNodes()) {
@@ -376,50 +383,70 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
 
     Set<Node> dataDependencies = new HashSet<>();
 
-    for (ControlSplitNode node : computeGates(graph)) {
-        if (controlDependencies.contains(node)) {
-            queue.add(node);
-            while (!queue.isEmpty()) {
-                Node current = queue.poll();
-                dataDependencies.add(current);
-                for (Node input : current.inputs()) {
-                    if (!dataDependencies.contains(input)) {
-                        queue.add(input);
+    // FIXME: need to account for inner if statements
+    if (!(parameterNode instanceof PhiNode)) {
+        for (ControlSplitNode node : computeGates(graph)) {
+            // could be hacky if inner loops
+            if (controlDependencies.contains(node) && !(parameterNode instanceof PhiNode && cfg.blockFor(node).getBeginNode() instanceof LoopBeginNode)) {
+                queue.add(node);
+                while (!queue.isEmpty()) {
+                    Node current = queue.poll();
+                    dataDependencies.add(current);
+                    for (Node input : current.inputs()) {
+                        if (!dataDependencies.contains(input)) {
+                            queue.add(input);
+                        }
                     }
                 }
             }
         }
     }
+
+    System.out.print("Data dependencies before control: ");
     for (Node node : dataDependenciesNoControl) {
-        if (node instanceof InvokeNode && node.toString().contains("calee")) {
-            System.out.println("invoke first");
-        }
-        if (node instanceof ReturnNode) {
-            System.out.println("return first");
-        }
+        System.out.printf(" %s ", node);
     }
+    System.out.println();
+
+    System.out.print("Control dependencies: ");
     for (Node node : controlDependencies) {
-        if (node instanceof InvokeNode && node.toString().contains("calee")) {
-            System.out.println("invoke second");
-        }
-        if (node instanceof ReturnNode) {
-            System.out.println("return second");
-        }
+        System.out.printf(" %s ", node);
     }
+    System.out.println();
+
+    System.out.print("Data dependencies: ");
     for (Node node : dataDependencies) {
-        if (node instanceof InvokeNode && node.toString().contains("calee")) {
-            System.out.println("invoke third");
-        }
-        if (node instanceof ReturnNode) {
-            System.out.println("return third");
-        }
+        System.out.printf(" %s ", node);
     }
+    System.out.println();
 
     dataDependencies.addAll(dataDependenciesNoControl);
     dataDependencies.addAll(controlDependencies);
 
     return dataDependencies;
 }
+
+    static private Set<Block> getDominatedByInLoop(Block block, Block until) {
+        Set<Block> dominated = new HashSet<>();
+
+        Queue<Block> queue = new LinkedList<>(Arrays.asList(block.getSuccessors()));
+
+        while (!queue.isEmpty()) {
+            Block current = queue.poll();
+            System.out.println(current.toString() + " " + until.toString() + " " + block.toString());
+            // possibly hacky if inner loops
+            if (current != until && !(current.getEndNode() instanceof LoopEndNode) && !(current.getBeginNode() instanceof LoopBeginNode) && !(current.getBeginNode() instanceof LoopExitNode)) dominated.add(current);
+
+            for(Block successor : current.getSuccessors()) {
+                if (!dominated.contains(successor) && successor != until) {
+                    queue.add(successor);
+                }
+            }
+        }
+
+
+        return dominated;
+    }
 
     static private Set<Block> getDominatedBy(Block block, Block until) {
         Set<Block> dominated = new HashSet<>();
