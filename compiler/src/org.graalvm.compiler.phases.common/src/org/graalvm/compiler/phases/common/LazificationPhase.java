@@ -28,8 +28,11 @@ import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.nodes.BeginNode;
+import org.graalvm.compiler.nodes.EndNode;
 import org.graalvm.compiler.nodes.InvokeNode;
 import org.graalvm.compiler.nodes.PhiNode;
+import org.graalvm.compiler.nodes.StartNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValuePhiNode;
 import org.graalvm.compiler.nodes.cfg.Block;
@@ -55,9 +58,11 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
    protected void run(StructuredGraph graph, CoreProviders context) {
        try (DebugContext.Scope s = graph.getDebug().scope("Lazification")) {
            ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-           // debugPrintDataDependencies(graph);
+           // debugComputeDataDependencies(graph);
+           debugPrintDataDependencies(graph);
            // debugPrintPhiNodes(graph);
-           debugPrintBlocks(graph);
+           // debugPrintBlocks(graph);
+           // debugPrintNodeOfInterest(graph);
            // debugPrintPhiMergeNodes(graph);
            // FindLazifiable findLazifiable = new FindLazifiable(graph);
            // for (FindLazifiable.LazifiableParam lazifiableParam : findLazifiable.getLazifiable()) {
@@ -65,6 +70,17 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
            // }
        }
    }
+
+    static private void debugComputeDataDependencies(StructuredGraph graph) {
+        if (!hasCaleeNode(graph)) {
+            return;
+        }
+        for (Node node : graph.getNodes()) {
+            if (node instanceof InvokeNode && node.toString().contains("calee")) {
+                Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
+            }
+        }
+    }
 
    static private boolean hasCaleeNode(StructuredGraph graph) {
          for (Node node : graph.getNodes()) {
@@ -74,6 +90,25 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
          }
          return false;
    }
+   static private void debugPrintNodeOfInterest(StructuredGraph graph) {
+       if (!hasCaleeNode(graph)) {
+            return;
+       }
+       for (Node node : graph.getNodes()) {
+           if (node instanceof BeginNode) {
+               System.out.printf("%s ", node);
+               System.out.print("inputs:");
+               for (Node input : node.inputs()) {
+                   System.out.printf(" %s ", input);
+               }
+               System.out.print("usages:");
+               for (Node usage : node.usages()) {
+                    System.out.printf(" %s ", usage);
+               }
+               System.out.println();
+           }
+       }
+   }
    static private void debugPrintPhiNodes(StructuredGraph graph) {
        if (!hasCaleeNode(graph)) {
            return;
@@ -81,9 +116,16 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
        for (Node node : graph.getNodes()) {
            if (node instanceof ValuePhiNode) {
                System.out.print(node);
+               System.out.print(" inputs:");
+               for (Node input : node.inputs()) {
+                   System.out.printf(" %s ", input);
+               }
+               System.out.print(" values: ");
                for (Node input : ((ValuePhiNode) node).values()) {
                    System.out.printf(" %s ", input);
                }
+               System.out.print(" merge: ");
+               System.out.printf(" %s ", ((ValuePhiNode) node).merge());
                System.out.println();
            }
        }
@@ -97,7 +139,7 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
        for (Node node : graph.getNodes()) {
            if (node instanceof InvokeNode && node.toString().contains("calee")) {
                System.out.printf("Invoke node:%s\t", node);
-               visited.add(node);
+               // visited.add(node);
                Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
                for (Node dataDep : dataDeps) {
                    System.out.printf(" %s ", dataDep);

@@ -32,6 +32,7 @@ import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.iterators.NodeIterable;
 import org.graalvm.compiler.nodes.AbstractMergeNode;
 import org.graalvm.compiler.nodes.ControlSplitNode;
+import org.graalvm.compiler.nodes.FixedNode;
 import org.graalvm.compiler.nodes.FrameState;
 import org.graalvm.compiler.nodes.IfNode;
 import org.graalvm.compiler.nodes.InvokeNode;
@@ -39,6 +40,7 @@ import org.graalvm.compiler.nodes.LoopBeginNode;
 import org.graalvm.compiler.nodes.LoopExitNode;
 import org.graalvm.compiler.nodes.MergeNode;
 import org.graalvm.compiler.nodes.PhiNode;
+import org.graalvm.compiler.nodes.ReturnNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.ValuePhiNode;
@@ -51,6 +53,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Optional;
 import java.util.Queue;
@@ -315,51 +318,128 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
     ValueNode parameterNode = I.callTarget().arguments().get(parameter);
 
     Queue<Node> queue = new LinkedList<>();
-    Set<Node> visited = new HashSet<>();
+    Set<Node> dataDependenciesNoControl = new HashSet<>();
 
     queue.add(parameterNode);
 
     while (!queue.isEmpty()) {
         Node current = queue.poll();
-        visited.add(current);
+        dataDependenciesNoControl.add(current);
 
         for (Node input : current.inputs()) {
-            if (!visited.contains(input)) {
+            if (!dataDependenciesNoControl.contains(input)) {
                 queue.add(input);
             }
         }
     }
 
-    Set<ControlSplitNode> gates = computeGates(graph);
+    ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
 
-    if (gates.isEmpty()) return visited;
-
-    Set<Node> visitedFromGate = new HashSet<>();
-
-    for (ControlSplitNode gate : gates) {
-        queue.add(gate);
-        while (!queue.isEmpty()) {
-            Node current = queue.poll();
-            visitedFromGate.add(current);
-
-            for (Node input : current.inputs()) {
-                if (!visitedFromGate.contains(input)) {
-                    queue.add(input);
+    Set<Node> controlDependencies = new HashSet<>();
+    for (Node dependency : dataDependenciesNoControl) {
+        if (dependency instanceof PhiNode) {
+            AbstractMergeNode merge = ((PhiNode) dependency).merge();
+            Block mergeBlock = cfg.blockFor(merge);
+            // add nodes succeding merge in same block
+            Iterator<FixedNode> nodes = mergeBlock.getNodes().iterator();
+            while (nodes.hasNext()) {
+                Node node = nodes.next();
+                if (node == merge) break;
+            }
+            while (nodes.hasNext()) {
+                Node node = nodes.next();
+                controlDependencies.add(node);
+            }
+            // add control nodes dominated by merge and not dominated by invoke
+            Set<Block> dominatedByMerge = getDominatedBy(mergeBlock, cfg.blockFor(I));
+            for (Block block : dominatedByMerge) {
+                for (Node node : block.getNodes()) {
+                    controlDependencies.add(node);
                 }
             }
         }
-        for (Node node : visited) {
-            if (node instanceof PhiNode && visitedFromGate.contains(node)) {
-                visited.addAll(visitedFromGate);
-                break;
-            }
+    }
+    for (Node node : controlDependencies) {
+        if (node instanceof InvokeNode && node.toString().contains("calee")) {
+            System.out.println("invoke blarg");
         }
-        visitedFromGate.clear();
+        if (node instanceof ReturnNode) {
+            System.out.println("return blarg");
+        }
+
+    }
+    // add control nodes preceding invoke in block
+    for (Node node : cfg.blockFor(I).getNodes()) {
+        if (node == I) break;
+        controlDependencies.add(node);
     }
 
+    Set<Node> dataDependencies = new HashSet<>();
 
-    return visited;
+    for (ControlSplitNode node : computeGates(graph)) {
+        if (controlDependencies.contains(node)) {
+            queue.add(node);
+            while (!queue.isEmpty()) {
+                Node current = queue.poll();
+                dataDependencies.add(current);
+                for (Node input : current.inputs()) {
+                    if (!dataDependencies.contains(input)) {
+                        queue.add(input);
+                    }
+                }
+            }
+        }
+    }
+    for (Node node : dataDependenciesNoControl) {
+        if (node instanceof InvokeNode && node.toString().contains("calee")) {
+            System.out.println("invoke first");
+        }
+        if (node instanceof ReturnNode) {
+            System.out.println("return first");
+        }
+    }
+    for (Node node : controlDependencies) {
+        if (node instanceof InvokeNode && node.toString().contains("calee")) {
+            System.out.println("invoke second");
+        }
+        if (node instanceof ReturnNode) {
+            System.out.println("return second");
+        }
+    }
+    for (Node node : dataDependencies) {
+        if (node instanceof InvokeNode && node.toString().contains("calee")) {
+            System.out.println("invoke third");
+        }
+        if (node instanceof ReturnNode) {
+            System.out.println("return third");
+        }
+    }
+
+    dataDependencies.addAll(dataDependenciesNoControl);
+    dataDependencies.addAll(controlDependencies);
+
+    return dataDependencies;
 }
+
+    static private Set<Block> getDominatedBy(Block block, Block until) {
+        Set<Block> dominated = new HashSet<>();
+
+        Queue<Block> queue = new LinkedList<>(Arrays.asList(block.getSuccessors()));
+
+        while (!queue.isEmpty()) {
+            Block current = queue.poll();
+            if (current != until) dominated.add(current);
+
+            for(Block successor : current.getSuccessors()) {
+                if (!dominated.contains(successor) && successor != until) {
+                    queue.add(successor);
+                }
+            }
+        }
+
+
+        return dominated;
+    }
 
     /**
      * Builds control flow of slice
