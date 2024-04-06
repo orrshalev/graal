@@ -57,17 +57,7 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
    @SuppressWarnings("try")
    protected void run(StructuredGraph graph, CoreProviders context) {
        try (DebugContext.Scope s = graph.getDebug().scope("Lazification")) {
-           ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-           // debugComputeDataDependencies(graph);
            debugPrintDataDependencies(graph);
-           // debugPrintPhiNodes(graph);
-           // debugPrintBlocks(graph);
-           // debugPrintNodeOfInterest(graph);
-           // debugPrintPhiMergeNodes(graph);
-           // FindLazifiable findLazifiable = new FindLazifiable(graph);
-           // for (FindLazifiable.LazifiableParam lazifiableParam : findLazifiable.getLazifiable()) {
-           //     lazifyParam(graph, lazifiableParam);
-           // }
        }
    }
 
@@ -76,15 +66,15 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
             return;
         }
         for (Node node : graph.getNodes()) {
-            if (node instanceof InvokeNode && node.toString().contains("calee")) {
-                Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
+            if (node instanceof InvokeNode && ProgramSlice.canOutline((InvokeNode) node)) {
+                Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node);
             }
         }
     }
 
    static private boolean hasCaleeNode(StructuredGraph graph) {
          for (Node node : graph.getNodes()) {
-              if (node instanceof InvokeNode && node.toString().contains("calee")) {
+              if (node instanceof InvokeNode && ProgramSlice.canOutline((InvokeNode) node))
                 return true;
               }
          }

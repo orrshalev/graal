@@ -84,14 +84,13 @@ public class ProgramSlice {
         this.initial = initial;
         this.parentMethod = parentMethod;
         this.callSite = callSite;
-        if (canOutline())
-            this.outlinedMethod = outline();
+        this.outlinedMethod = outline();
     }
     public ResolvedJavaMethod outline() {
         throw new UnsupportedOperationException();
     }
 
-    public boolean canOutline() {
+    public static boolean canOutline(InvokeNode node) {
         throw new UnsupportedOperationException();
     }
 
@@ -235,10 +234,7 @@ public class ProgramSlice {
     /**
      * Remove unnecessary predecessors to phi nodes in new slice
      */
-    private void updatePhiNodes(StructuredGraph graph) {
-        
-
-    }
+    private void updatePhiNodes(StructuredGraph graph) { }
 
 
     /**
@@ -314,7 +310,7 @@ public class ProgramSlice {
      * should be part of the slice
      * @return a set of blocks and a set of values that are part of the slice
      */
-public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNode I, int parameter) {
+public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNode I) {
 
     ValueNode parameterNode = I.callTarget().arguments().get(parameter);
 
@@ -366,12 +362,9 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
                 dominatedByMerge = getDominatedBy(mergeBlock, cfg.blockFor(I));
             }
             for (Block block : dominatedByMerge) {
-                System.out.print(block.toString() + " ");
                 for (Node node : block.getNodes()) {
-                    System.out.print(node.toString() + " ");
                     controlDependencies.add(node);
                 }
-                System.out.println();
             }
         }
     }
@@ -383,7 +376,6 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
 
     Set<Node> dataDependencies = new HashSet<>();
 
-    // FIXME: need to account for inner if statements
     if (!(parameterNode instanceof PhiNode)) {
         for (ControlSplitNode node : computeGates(graph)) {
             // could be hacky if inner loops
@@ -402,24 +394,6 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
         }
     }
 
-    System.out.print("Data dependencies before control: ");
-    for (Node node : dataDependenciesNoControl) {
-        System.out.printf(" %s ", node);
-    }
-    System.out.println();
-
-    System.out.print("Control dependencies: ");
-    for (Node node : controlDependencies) {
-        System.out.printf(" %s ", node);
-    }
-    System.out.println();
-
-    System.out.print("Data dependencies: ");
-    for (Node node : dataDependencies) {
-        System.out.printf(" %s ", node);
-    }
-    System.out.println();
-
     dataDependencies.addAll(dataDependenciesNoControl);
     dataDependencies.addAll(controlDependencies);
 
@@ -433,7 +407,6 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
 
         while (!queue.isEmpty()) {
             Block current = queue.poll();
-            System.out.println(current.toString() + " " + until.toString() + " " + block.toString());
             // possibly hacky if inner loops
             if (current != until && !(current.getEndNode() instanceof LoopEndNode) && !(current.getBeginNode() instanceof LoopBeginNode) && !(current.getBeginNode() instanceof LoopExitNode)) dominated.add(current);
 
