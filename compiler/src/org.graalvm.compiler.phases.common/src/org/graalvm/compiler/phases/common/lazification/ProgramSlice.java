@@ -48,6 +48,7 @@ import org.graalvm.compiler.nodes.ValuePhiNode;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
+import org.graalvm.compiler.nodes.java.ExceptionObjectNode;
 import org.graalvm.compiler.nodes.java.MethodCallTargetNode;
 
 import java.util.ArrayList;
@@ -55,10 +56,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.LinkedList;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
+import java.util.Collections;
 
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -90,8 +93,65 @@ public class ProgramSlice {
         throw new UnsupportedOperationException();
     }
 
-    public static boolean canOutline(InvokeNode node) {
-        throw new UnsupportedOperationException();
+    public static class OutlinableParameter {
+        int parameter;
+        int numberOfDependencies;
+        OutlinableParameter(int parameter, int numberOfDependencies) {
+            this.parameter = parameter;
+            this.numberOfDependencies = numberOfDependencies;
+        }
+
+        public int getParameterIndex() {
+            return parameter;
+        }
+    }
+    public static OutlinableParameter[][] canOutline(InvokeNode node) {
+        // Step 1: Compute data dependencies for each parameter
+        List<Set<Node>> parameterDependencies = new ArrayList<>();
+        for (int i = 0; i < node.callTarget().arguments().size(); i++) {
+            Set<Node> dataDependencies = computeDataDependencies(node.graph(), node, i);
+            // ensure that there is no ExceptionObjectNode
+            if (dataDependencies.stream().anyMatch(n -> n instanceof ExceptionObjectNode)) continue;
+            parameterDependencies.add(dataDependencies);
+        }
+
+        // Step 2: Group parameters by overlapping dependencies
+        List<List<Integer>> groups = new ArrayList<>();
+        for (int i = 0; i < parameterDependencies.size(); i++) {
+            boolean foundGroup = false;
+            for (List<Integer> group : groups) {
+                for (Integer member : group) {
+                    if (!Collections.disjoint(parameterDependencies.get(i), parameterDependencies.get(member))) {
+                        group.add(i);
+                        foundGroup = true;
+                        break;
+                    }
+                }
+                if (foundGroup) break;
+            }
+            if (!foundGroup) {
+                List<Integer> newGroup = new ArrayList<>();
+                newGroup.add(i);
+                groups.add(newGroup);
+            }
+        }
+
+        // Step 3: Create the result array and order groups by dependency count
+        OutlinableParameter[][] result = new OutlinableParameter[groups.size()][];
+        int groupIndex = 0;
+        for (List<Integer> group : groups) {
+            OutlinableParameter[] groupArray = new OutlinableParameter[group.size()];
+            for (int i = 0; i < group.size(); i++) {
+                int parameterIndex = group.get(i);
+                groupArray[i] = new OutlinableParameter(parameterIndex, parameterDependencies.get(parameterIndex).size());
+            }
+            // Order the group by the number of dependencies
+            Arrays.sort(groupArray, (a, b) -> b.numberOfDependencies - a.numberOfDependencies);
+            result[groupIndex++] = groupArray;
+        }
+
+        return result;
+
     }
 
     /**
@@ -310,7 +370,7 @@ public class ProgramSlice {
      * should be part of the slice
      * @return a set of blocks and a set of values that are part of the slice
      */
-public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNode I) {
+public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNode I, int parameter) {
 
     ValueNode parameterNode = I.callTarget().arguments().get(parameter);
 

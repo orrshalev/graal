@@ -44,6 +44,8 @@ import org.graalvm.compiler.phases.common.lazification.ProgramSlice;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.io.FileWriter;
+import java.io.IOException;
 
 
 /**
@@ -62,28 +64,17 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
    }
 
     static private void debugComputeDataDependencies(StructuredGraph graph) {
-        if (!hasCaleeNode(graph)) {
-            return;
-        }
         for (Node node : graph.getNodes()) {
-            if (node instanceof InvokeNode && ProgramSlice.canOutline((InvokeNode) node)) {
-                Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node);
+            if (node instanceof InvokeNode ) {
+                ProgramSlice.OutlinableParameter[][] outlinableParameters = ProgramSlice.canOutline((InvokeNode) node);
+                for (int i = 0; i < outlinableParameters.length; i++) {
+                    Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, outlinableParameters[i][0].getParameterIndex());
+                }
             }
         }
     }
 
-   static private boolean hasCaleeNode(StructuredGraph graph) {
-         for (Node node : graph.getNodes()) {
-              if (node instanceof InvokeNode && ProgramSlice.canOutline((InvokeNode) node))
-                return true;
-              }
-         }
-         return false;
-   }
    static private void debugPrintNodeOfInterest(StructuredGraph graph) {
-       if (!hasCaleeNode(graph)) {
-            return;
-       }
        for (Node node : graph.getNodes()) {
            if (node instanceof BeginNode) {
                System.out.printf("%s ", node);
@@ -100,9 +91,6 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
        }
    }
    static private void debugPrintPhiNodes(StructuredGraph graph) {
-       if (!hasCaleeNode(graph)) {
-           return;
-       }
        for (Node node : graph.getNodes()) {
            if (node instanceof ValuePhiNode) {
                System.out.print(node);
@@ -121,35 +109,46 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
        }
    }
 
+   // TODO: fix if needed to include multiple parameters
    static private void debugPrintDataDependencies(StructuredGraph graph) {
-       if (!hasCaleeNode(graph)) {
-            return;
-       }
-       Set<Node> visited = new HashSet<>();
-       for (Node node : graph.getNodes()) {
-           if (node instanceof InvokeNode && node.toString().contains("calee")) {
-               System.out.printf("Invoke node:%s\t", node);
-               // visited.add(node);
-               Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, 1);
-               for (Node dataDep : dataDeps) {
-                   System.out.printf(" %s ", dataDep);
-                   visited.add(dataDep);
+       // create file called dataDeps.txt
+
+       try {
+           FileWriter myWriter = new FileWriter("dataDeps.txt", true);
+           for (Node node : graph.getNodes()) {
+               if (node instanceof InvokeNode) {
+                   myWriter.write("Invoke node: " + node + "\n");
+                   ProgramSlice.OutlinableParameter[][] outlinableParameters = ProgramSlice.canOutline((InvokeNode) node);
+                   for (int i = 0; i < outlinableParameters.length; i++) {
+                       myWriter.write("\nSTART OF GROUP");
+                       for (int j = 0; j < outlinableParameters[i].length; j++) {
+                           Set<Node> visited = new HashSet<>();
+                           myWriter.write(String.format("\nOutlinable parameter: %d ", outlinableParameters[i][j].getParameterIndex()));
+                           // System.out.println();
+                           Set<Node> dataDeps = ProgramSlice.computeDataDependencies(graph, (InvokeNode) node, outlinableParameters[i][j].getParameterIndex());
+                           for (Node dataDep : dataDeps) {
+                               myWriter.write(String.format(" %s ", dataDep));
+                               visited.add(dataDep);
+                           }
+                           myWriter.write("Not included: ");
+                           for (Node unvisitedNode : graph.getNodes()) {
+                               if (!visited.contains(unvisitedNode)) {
+                                   myWriter.write(String.format(" %s ", unvisitedNode));
+                               }
+                           }
+                           // System.out.println();
+                       }
+                       myWriter.write("\nEND OF GROUP\n");
+                   }
                }
-               System.out.println();
            }
+           myWriter.close();
+       } catch (IOException e) {
+           System.out.println("An error occurred.");
+           e.printStackTrace();
        }
-       System.out.print("Not included: ");
-       for (Node node : graph.getNodes()) {
-           if (!visited.contains(node)) {
-                System.out.printf(" %s ", node);
-           }
-       }
-       System.out.println();
    }
    static private void debugPrintBlocks(StructuredGraph graph) {
-       if (!hasCaleeNode(graph)) {
-            return;
-       }
        ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
        System.out.println(graph);
        System.out.println();
