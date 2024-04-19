@@ -438,7 +438,6 @@ public static Set<Node> computeDataDependencies(StructuredGraph graph, InvokeNod
 
     if (!(parameterNode instanceof PhiNode)) {
         for (ControlSplitNode node : computeGates(graph)) {
-            // could be hacky if inner loops
             if (controlDependencies.contains(node) && !(parameterNode instanceof PhiNode && cfg.blockFor(node).getBeginNode() instanceof LoopBeginNode)) {
                 queue.add(node);
                 while (!queue.isEmpty()) {

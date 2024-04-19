@@ -109,7 +109,6 @@ public class LazificationPhase extends BasePhase<CoreProviders> {
        }
    }
 
-   // TODO: fix if needed to include multiple parameters
    static private void debugPrintDataDependencies(StructuredGraph graph) {
        // create file called dataDeps.txt
 
